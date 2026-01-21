@@ -71,6 +71,19 @@ def parseheader(stream: BinaryIO) -> Dict[str, Any]:
             raise KeyError(
                 f"Unknown key {key!r}. Add it to STRING_VALUE_KEYS / INT_VALUE_KEYS / DOUBLE_VALUE_KEYS."
             )
+            
+def zstheader(path: str) -> Dict[str, Any]:
+    """
+    Read and return the SIGPROC header from a zstd-compressed filterbank file.
+    Raises on corruption.
+    """
+    proc = subprocess.Popen(["zstd", "-dc", path], stdout=subprocess.PIPE)
+    assert proc.stdout is not None
+
+    try:
+        return parseheader(proc.stdout)
+    finally:
+        proc.kill()
 
 def main():
     ap = argparse.ArgumentParser(description="Parse PRESTO/SIGPROC filterbank header from .fil.zst")
