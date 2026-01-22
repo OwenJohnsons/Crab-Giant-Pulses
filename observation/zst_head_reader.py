@@ -72,11 +72,28 @@ def parseheader(stream: BinaryIO) -> Dict[str, Any]:
                 f"Unknown key {key!r}. Add it to STRING_VALUE_KEYS / INT_VALUE_KEYS / DOUBLE_VALUE_KEYS."
             )
             
+def valid_header(path: str, nbytes: int = 512) -> bool:
+    proc = subprocess.Popen(
+        ["zstd", "-dc", path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    assert proc.stdout is not None
+
+    try:
+        data = proc.stdout.read(nbytes)
+        return b"HEADER_START" in data
+    finally:
+        proc.kill()
+            
 def zstheader(path: str) -> Dict[str, Any]:
     """
     Read and return the SIGPROC header from a zstd-compressed filterbank file.
     Raises on corruption.
     """
+    if not valid_header(path):
+        raise ValueError("HEADER_START not found in first 512 bytes")
+
     proc = subprocess.Popen(["zstd", "-dc", path], stdout=subprocess.PIPE)
     assert proc.stdout is not None
 
