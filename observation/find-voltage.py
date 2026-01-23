@@ -50,6 +50,10 @@ def main():
             formatted_date = dt.strftime("%Y-%m-%d %H:%M:%S")
             mjd = dt.timestamp() / 86400.0 + 40587.0
             target = basename[14:]
+            
+            if '_PSR' in target:
+                target = target.split('_PSR')[0]
+                
             # print("%s - %s - %d files" % (formatted_date, target, line[1]))
             
             targets.append(target)
