@@ -9,9 +9,6 @@ psredit -m \
   -c "ext:obsnchan=3904" \
   $archive 
 
-# pam -m -E ./newpolyco.dat $archive
-# pam -m -E pulsar.par --ephver tempo2 "$archive"
-
 t_obs=$(psrstat -c length $archive | awk '{print $2}' | awk -F = '{print $2}')
 echo "file length $t_obs seconds"
 
@@ -26,17 +23,7 @@ mjd=$(awk -v mjd="$start_mjd" \
 echo "start MJD: $mjd"
 
 new_DM=$(python /mnt/ucc4_data2/data/Owen/software/DM_phase/DM_phase_parallel.py \
-    --mjd $mjd --tobs $t_obs --csv \
-    -no_plots -DM_s 56.6 -DM_e 56.9 -DM_step 0.001 "$archive" \
+    --mjd $mjd --tobs $t_obs --csv -no_plot --n_jobs 62 \
+    -DM_s 56.6 -DM_e 56.9 -DM_step 0.001 "$archive" \
     | tee /dev/tty \
     | grep -oP 'DM:\s*\K[0-9.]+' )
-
-# echo "new DM: $new_DM"
-# pam -m -d $new_DM -D $new_DM $archive
-
-# psrstat -c dm $archive
-
-# ext:stt_imjd     Start MJD                                         61073
-# ext:stt_smjd     Start second                                      70268
-# ext:stt_offs     Start fractional second                           0.391150177001236
-# old DM=56.73 
