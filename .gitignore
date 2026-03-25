@@ -2,3 +2,6 @@ cdmtProc*.sh
 *.pdf
 *.png
 *.ar
+*.ar.rficlean
+*.pfd*
+*_rfifind*
