@@ -19,7 +19,7 @@ find "$path" -name '*P000.fil' -print0 | while IFS= read -r -d '' fil; do
     echo "Found 8-bit version: $fil"
   else
     echo "No 8-bit version found, creating one: $fil"
-    digifil -b 8 "$fil" "${fil%.fil}_8bit.fil"
+    digifil -b 8 -o \"${fil%.fil}_8bit.fil\" \"$fil\"
     fil="${fil%.fil}_8bit.fil"
   fi
 
@@ -60,28 +60,30 @@ find "$path" -name '*P000.fil' -print0 | while IFS= read -r -d '' fil; do
     prepfold -noxwin -ignorechan 0:3000,3850:3903 -f "$F0" -dm "$DM" "$fil" -ncpus 16 -mask "$folding_dir/${basename}_0mask_rfifind.mask" -zerodm -nsub 3904  -nopdsearch -ndmfact 4 -npfact 10 -n 256 -o "${basename}_0fold_hifreq"
   fi
 
-  if compgen -G "$folding_dir/${basename}_0fold_*.pfd" > /dev/null; then
+  if compgen -G "$folding_dir/${basename}_0fold_fullband*.pfd" > /dev/null; then
     echo "Found existing full-frequency fold"
   else
-    prepfold -noxwin -ignorechan 0:250,3850:3903 -f "$F0" -dm "$DM" "$fil" -ncpus 16 -mask "$folding_dir/${basename}_0mask_rfifind.mask" -zerodm -nsub 3904  -nopdsearch -ndmfact 4 -npfact 10 -n 256 -o "${basename}_0fold"
+    prepfold -noxwin -ignorechan 0:250,3850:3903 -f "$F0" -dm "$DM" "$fil" -ncpus 16 -mask "$folding_dir/${basename}_0mask_rfifind.mask" -zerodm -nsub 3904  -nopdsearch -ndmfact 4 -npfact 10 -n 256 -o "${basename}_0fold_fullband"
   fi
 
   # --- Making Weights for DSPSR --- 
   # python /home/soft/presto/bin/rfifind_stats.py $folding_dir/${basename}_0mask_rfifind.mask
   # paz -e zap -Z '0 250' -z 625 -z 757 -z 772 -z 1056 -z 1099 -z 1207 -z 1211 -Z '1224 1231' -z 1242 -z 1253 -z 1311 -Z '1350 1351' -Z '1359 1360' -z 1365 -z 1368 -z 1392 -Z '1414 1423' -z 1427 -z 1442 -z 1452 -Z '1776 1780' -Z '1782 1783' -Z '2085 2086' -z 2091 -z 2093 -Z '2312 2319' -z 2488 -z 2496 -z 2594 -z 2596 -z 2607 -z 2610 -Z '3362 3367' -Z '3372 3374' -Z '3453 3456' -Z '3850 3903'
 
-  pfd_file=$(compgen -G "$folding_dir/${basename}_0fold_2*Cand.pfd.bestprof" | head -n 1)
+  pfd_file=$(compgen -G "$folding_dir/${basename}*0fold_fullband_*Cand.pfd.bestprof" | head -n 1)
   echo "Best profile file: $pfd_file"
   new_DM=$(cat "$pfd_file" | awk 'NR==15 {print $5}')
-  new_F0=$(cat "$pfd_file" | awk 'NR==16 {print $5}')
-  echo "Refined DM: $new_DM, Refined F0: $new_F0"
-  
+  new_P0=$(cat "$pfd_file" | awk 'NR==16 {print $5}')
+  new_P1=$(cat "$pfd_file" | awk 'NR==17 {print $5}')
+  echo "Refined DM: $new_DM, Refined P0: $new_P0, Refined P1: $new_P1"
+
   length=30
 
   if [[ -f "${basename}_L${length}_folded.ar" ]]; then
     echo "Found existing folded archive: ${basename}_L${length}_folded.ar"
   else
-    dspsr -L $length -D "$new_DM" -c "$(awk "BEGIN{print 1/$new_F0}")" -b 256 -A -O "${basename}_L${length}_folded" "$fil"
+    # new P0 is in miliseconds, dspsr expects it in seconds
+    dspsr -L $length -D "$new_DM" -c "$(awk "BEGIN{print $new_P0/1000}")" -b 256 -A -O "${basename}_L${length}_folded" "$fil"
   fi
 
   ar_file=$folding_dir/${basename}_L${length}_folded.ar
@@ -92,7 +94,35 @@ find "$path" -name '*P000.fil' -print0 | while IFS= read -r -d '' fil; do
     paz -e zap -Z '0 250' -z 625 -z 757 -z 772 -z 1056 -z 1099 -z 1207 -z 1211 -Z '1224 1231' -z 1242 -z 1253 -z 1311 -Z '1350 1351' -Z '1359 1360' -z 1365 -z 1368 -z 1392 -Z '1414 1423' -z 1427 -z 1442 -z 1452 -Z '1776 1780' -Z '1782 1783' -Z '2085 2086' -z 2091 -z 2093 -Z '2312 2319' -z 2488 -z 2496 -z 2594 -z 2596 -z 2607 -z 2610 -Z '3362 3367' -Z '3372 3374' -Z '3453 3456' -Z '3850 3903' $ar_file
   fi
 
-  # echo "Finished processing $fil"
-  break
+  chmod o+r "$folding_dir"/*
+  chmod o+w "$folding_dir"
+  echo "Finished processing $fil"
+
+  # Create up-to-date .par file
+  par_file="$folding_dir/${basename}.par"
+
+  par_content="PSRJ            J0534+2200
+RAJ             05:34:31.973                  5.000e-03
+DECJ            +22:00:52.06                  6.000e-02
+DM              $new_DM                        2.400e-04
+PEPOCH         $header_mjd                
+P0              $new_P0                    1.000e-06
+P1              $new_P1                    1.000e-12
+PMRA            -14.7                         8.000e-01
+PMDEC           2.0                           8.000e-01
+POSEPOCH       $header_mjd
+DMEPOCH        $header_mjd                     
+F2              1.1147E-20                    5.000e-24
+EPHEM           DE405
+RM              -45.44                        8.000e-02
+F3              -2.73E-30                     4.000e-32
+EPHVER          2
+UNITS           TDB"
+    
+  echo "$par_content" > "$par_file"
+  echo "Created .par file: $par_file"
+
+
+  # break
 
 done
