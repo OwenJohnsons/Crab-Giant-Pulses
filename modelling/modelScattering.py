@@ -1,7 +1,5 @@
 import psrchive 
 import numpy as np 
-import matplotlib.pyplot as plt
-import scienceplots; plt.style.use(['science', 'no-latex'])
 from lmfit import Model
 
 
@@ -103,28 +101,41 @@ def _load_psrchive(fname, dm):
 
     return waterfall, f_channels, t_res
 
+def get_args():
+    import argparse
+    parser = argparse.ArgumentParser(description="Fit scattering models to Crab GP sub-bands")
+    parser.add_argument("ar", help="Path to PSRCHIVE .ar file")
+    parser.add_argument("--nsub", type=int, default=8, help="Number of sub-bands to split into (default: 10)")
+    parser.add_argument("--plot", action='store_true', help="Whether to show the plot interactively")
+    parser.add_argument("-dm", type=float, required=True, help="DM to use for dedispersion")
+    parser.add_argument("-v", "--verbose", action='store_true', default=False, help="Enable verbose output")
+    parser.add_argument("--wrapper", action='store_true', help="Whether to run as part of the wrapper script")
+    return parser.parse_args()
 
 def main():
-    # debug_ar = '/mnt/ucc4_data2/data/filterbanks/Crab/2026-02-02/transientx_output/Crab_61073.8131828382_cfbf00000_01_01.ar'
-    debug_ar = '../DM_calc/Crab_uncorrected.ar'
-    ar = debug_ar 
-    waterfall, f_channels, t_res = _load_psrchive(ar, 56.711)
+    args = get_args()
+    ar = args.ar
+    dm = args.dm
+    verbose = args.verbose
     
-    verbose = True
+    waterfall, f_channels, t_res = _load_psrchive(ar, dm)
     
     # supress RuntimeWarning: divide by zero encountered in true_divide
     np.seterr(divide='ignore', invalid='ignore')
     
-    print(f"Waterfall shape: {waterfall.shape}")
-    print(f"Frequency channels: {f_channels.shape}")
-    print(f"Time resolution: {t_res}")
+    if verbose: 
+        print(f"Waterfall shape: {waterfall.shape}")
+        print(f"Frequency channels: {f_channels.shape}")
+        print(f"Time resolution: {t_res}")
     
     overall_profile = np.mean(waterfall, axis=0) 
     max_idx = np.argmax(overall_profile)
     
-    n_subbands = 10
+    n_subbands = args.nsub
     subband_size = len(f_channels) // n_subbands
     subbands = []
+    
+
     for i in range(n_subbands): 
         strt_idx = i * subband_size
         end_idx = (i + 1) * subband_size if i < n_subbands - 1 else len(f_channels)
@@ -134,16 +145,21 @@ def main():
         if verbose: 
             print(f"Frequency range for sub-band {i}: {f_channels[strt_idx]:.2f} MHz - {f_channels[end_idx-1]:.2f} MHz")
             print(f"Sub-band {i} shape: {subband_array.shape}")
+            
     
-    colors = plt.cm.cool(np.linspace(0, 1, len(f_channels)))
-    fig, (ax1, ax2) = plt.subplots(
-        2, 1, sharex=True, gridspec_kw={'height_ratios': [2, 20]},
-        figsize=(4, 10), constrained_layout=True, squeeze=True
-    )
-    
-    t_full = np.arange(waterfall.shape[1]) * t_res
-    ax1.plot(t_full, overall_profile, color='black')
-    ax1.set_ylabel('Intensity')
+    if args.plot:
+        import matplotlib.pyplot as plt
+        import scienceplots; plt.style.use(['science', 'no-latex'])
+                
+        colors = plt.cm.cool(np.linspace(0, 1, len(f_channels)))
+        fig, (ax1, ax2) = plt.subplots(
+            2, 1, sharex=True, gridspec_kw={'height_ratios': [2, 20]},
+            figsize=(4, 10), constrained_layout=True, squeeze=True
+        )
+        
+        t_full = np.arange(waterfall.shape[1]) * t_res
+        ax1.plot(t_full, overall_profile, color='black')
+        ax1.set_ylabel('Intensity')
     
     for i, subband in enumerate(subbands[:]):
         y_shift = i * 1.6 * overall_profile.max()  # Shift each sub-band up for visibility
@@ -167,37 +183,40 @@ def main():
             tau_uncertainty = result_modthin.params['tau'].stderr    # 1σ
             fit_report = result_modthin.fit_report()
         
-        print('\nFrequency: {:.2f} MHz'.format(f_channels[i*subband_size + subband_size//2]))
-        print(fit_report)
+        if verbose: 
+            print('\nFrequency: {:.2f} MHz'.format(f_channels[i*subband_size + subband_size//2]))
+            print(fit_report)
         # print(f"τ = {tau_value*1e3:.2f} ± {tau_uncertainty*1e3:.2f} ms, reduced χ² = {reduced_chi2:.2f} for sub-band {i} ({f_channels[i*subband_size + subband_size//2]:.2f} MHz)")
         
+        if args.wrapper:
+            # cntr freq | tau thin | tau thin uncer | thin AIC | thin reduced chi2 | tau thick | tau thick uncer | thick AIC | thick reduced chi2
+            print(f"{f_channels[i*subband_size + subband_size//2]:.2f}, {result_modthin.params['tau'].value*1e3:.2f}, {result_modthin.params['tau'].stderr*1e3:.2f}, {result_modthin.aic:.2f}, {result_modthin.redchi:.4f}, {result_thick.params['tau'].value*1e3:.2f}, {result_thick.params['tau'].stderr*1e3:.2f}, {result_thick.aic:.2f}, {result_thick.redchi:.4f}")
+        
+        if args.plot:
+            ax2.scatter(x_vals, avg_spectrum + y_shift, s=5, 
+                    color=colors[i*subband_size + subband_size//2],
+                    label=f'{f_channels[i*subband_size + subband_size//2]:.2f} MHz')
+        
 
-        ax2.scatter(x_vals, avg_spectrum + y_shift, s=5, 
-                color=colors[i*subband_size + subband_size//2],
-                label=f'{f_channels[i*subband_size + subband_size//2]:.2f} MHz')
-    
-
-        ax2.axhline(y_shift, color='gray', ls='--', lw=0.5)
-        ax2.plot(t_pulse, (best_y - best_y.min()) + y_shift, '-', lw=1.5,
-                color='k')
-        half_time = 0.17
-        ax2.text(half_time, y_shift + 0.8, f"{f_channels[i*subband_size + subband_size//2]:.1f} MHz, $\\tau$={tau_value*1e3:.2f} $\pm$ {tau_uncertainty*1e3:.2f} ms", fontsize=8, color='k', va='bottom')
+            ax2.axhline(y_shift, color='gray', ls='--', lw=0.5)
+            ax2.plot(t_pulse, (best_y - best_y.min()) + y_shift, '-', lw=1.5,
+                    color='k')
+            half_time = 0.17
+            ax2.text(half_time, y_shift + 0.8, f"{f_channels[i*subband_size + subband_size//2]:.1f} MHz, $\\tau$={tau_value*1e3:.2f} $\pm$ {tau_uncertainty*1e3:.2f} ms", fontsize=8, color='k', va='bottom')
         
    
-    
-    ax1.set_xlim(t_pulse.min(), t_pulse.max())
-    ax2.set_xlabel('Time [s]')
-    
-    plt.setp(ax1.get_yticklabels(), visible=False)
-    plt.setp(ax2.get_yticklabels(), visible=False)
-    
-    handles, labels = ax2.get_legend_handles_labels()
-
-    # ax2.legend(handles[::-1], labels[::-1], bbox_to_anchor=(1.05, 1), loc='upper left')
-    
-    path_basename = ar.split('/')[-1].replace('.ar', '')
-    plt.savefig(f'{path_basename}_fit.png', dpi=200)
-    plt.savefig(f'{path_basename}_fit.pdf')
+    if args.plot: 
+        ax1.set_xlim(t_pulse.min(), t_pulse.max())
+        ax2.set_xlabel('Time [s]')
+        
+        plt.setp(ax1.get_yticklabels(), visible=False)
+        plt.setp(ax2.get_yticklabels(), visible=False)
+        
+        # handles, labels = ax2.get_legend_handles_labels()
+        
+        path_basename = ar.split('/')[-1].replace('.ar', '')
+        plt.savefig(f'{path_basename}_fit.png', dpi=200)
+        plt.savefig(f'{path_basename}_fit.pdf')
 
 
 if __name__ == "__main__":
