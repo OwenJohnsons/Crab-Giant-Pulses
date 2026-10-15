@@ -5,3 +5,8 @@ cdmtProc*.sh
 *.ar.rficlean
 *.pfd*
 *_rfifind*
+*.json
+*.tim
+*.par
+*.dat
+*.f8
